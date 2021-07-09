@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+    <head>
+        <style>
+            body {
+                width: 97vw;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-around;
+                align-items: center;
+            }
+
+            body h1 {
+                margin: 0;
+                padding: 0;
+            }
+
+            body h2 {
+                font-size: 15px;
+                margin: 0;
+                padding: 0 0 10px 0;
+            }
+
+            #tooltip {
+                display: none;
+                flex-direction: column;
+                align-items: left;
+                justify-content: center;
+                background-color: #000;
+                color: #FFF;
+                position: absolute;
+                padding: 10px;
+            }
+
+            #tooltip h2 {
+                font-size: 20px;
+                margin: 0;
+                padding: 0;
+            }
+
+            #tooltip h3 {
+                font-size: 15px;
+                margin: 0;
+                padding: 0;
+            }
+
+            #tooltip p {
+                font-size: 12px;
+                margin: 0;
+                padding: 0;
+            }
+
+        </style>
+    </head>
+    <body>
+        <h1 id="title">Kickstarter Projects</h1>
+        <h2 id="description">How about these projects?!</h2>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <script src="data.js"></script>
+        <script>
+
+            const tooltip = d3.select("body").append("div").attr("id","tooltip");
+
+            function popup(event) {
+                const name = d3.select(this).attr("data-name"),
+                value = d3.select(this).attr("data-value"),
+                category = d3.select(this).attr("data-category");
+
+                tooltip
+                .attr("data-value", value)
+                .html(`<h2>${name}</h2><h3>${category}</h3><p>Value: ${value}</p>`)
+                .style("display","flex")
+                .style("left",`${event.pageX + 20}px`)
+                .style("top", `${event.pageY}px`);
+            }
+
+            function popdown() {
+                tooltip.style("display", "none");
+            }
+
+            function fracMaker(cats) {
+
+                const total = cats.reduce((acc,cat) => acc + cat.value, 0);
+
+                return cats.map(cat => {
+                    return {
+                        name: cat.name,
+                        value: cat.value,
+                        frac: cat.value/total
+                    };
+                }).sort((a,b) => b.frac - a.frac);
+            }
+
+            function addRandoColor(boxes) {
+                return boxes.map(box => {
+                    const red = Math.floor(Math.random() * 16).toString(16);
+                    const blue = Math.floor(Math.random() * 16).toString(16);
+                    const green = Math.floor(Math.random() * 16).toString(16);
+                    box.color = `#${red}${blue}${green}`;
+                    return box;
+                });
+            }
+
+            function bestRandomBoxes(height, width, x, y, boxes, iterations) {
+                let bestRando = randomBoxMaker(height, width, x, y, boxes);
+                let bestError = bestRando.reduce((sum, box) => sum + (box.height - box.width)**2, 0);
+                let nextRando, nextError;
+                for (let i=1; i<iterations; i++) {
+                    nextRando = randomBoxMaker(height, width, x, y, boxes);
+                    nextError = nextRando.reduce((sum, box) => sum + (box.height - box.width)**2, 0);
+                    if (nextError < bestError) {
+                        bestRando = nextRando;
+                        bestError = nextError;
+                    }
+                }
+                return bestRando;
+            }
+
+            function randomBoxMaker(height, width, x, y, boxes) {
+                let ourBoxes = boxes.slice(0);
+                const area = height * width;
+
+                let currentX = x, currentY = y;
+                let direction = 0, number = 1, output = [];
+                let nextBoxes, nextArea, nextHeight, nextWidth;
+
+                while (ourBoxes.length > 0) {
+                    direction = Math.floor(Math.random() * 2);
+                    number = Math.floor(Math.random() * ourBoxes.length) + 1;
+                    nextBoxes = ourBoxes.slice(0,number);
+                    nextArea = nextBoxes.reduce((sum,box) => sum + box.frac, 0) * area;
+
+                    if (direction == 0) {
+
+                        nextHeight = height - currentY + y;
+                        nextWidth = nextArea/nextHeight;
+
+                        output = output.concat(nextBoxes.reduce((out, box) => {
+                            
+                            return out.concat([{
+                                name: box.name,
+                                value: box.value,
+                                frac: box.frac,
+                                width: nextWidth,
+                                height: (box.frac * area)/nextWidth,
+                                x: currentX,
+                                y: out[out.length-1].y + out[out.length-1].height
+                            }]);
+                        },[{
+                            y: currentY,
+                            height: 0
+                        }]).slice(1));
+                        currentX += nextWidth
+                    } else {
+
+                        nextWidth = width - currentX + x;
+                        nextHeight = nextArea/nextWidth;
+
+                        output = output.concat(nextBoxes.reduce((out, box) => {
+                            return out.concat([{
+                                name: box.name,
+                                value: box.value,
+                                frac: box.frac,
+                                height: nextHeight,
+                                width: (box.frac * area)/nextHeight,
+                                y: currentY,
+                                x: out[out.length-1].x + out[out.length-1].width,
+                            }]);
+                        },[{
+                            x: currentX,
+                            width: 0
+                        }]).slice(1));
+                        currentY += nextHeight
+                    }
+                    ourBoxes = ourBoxes.slice(number);
+                }
+
+                return output;
+            }
+
+            const W = 1000, H = 700, LH = 300;
+
+            const svg = d3.select("body")
+            .append("svg")
+            .attr("height", H + LH)
+            .attr("width", W)
+
+            let ksCats = fracMaker(kickstarter.children.map(cat => {
+                return {
+                name: cat.name,
+                value: cat.children.reduce((a,child) => a + parseInt(child.value), 0)
+            };}));
+
+            ksCats = addRandoColor(bestRandomBoxes(H, W, 0, 0, ksCats, 5000));
+
+            let ksBigBoxes = ksCats.reduce((acc,cat) => {
+                acc[cat.name] = {
+                    value: cat.value,
+                    x: cat.x,
+                    y: cat.y,
+                    width: cat.width,
+                    height: cat.height,
+                    color: cat.color
+                };
+                return acc;
+            }, {});
+
+            let ksSmallBoxes = kickstarter.children.reduce((acc,cat) => {
+                let smalls = cat.children.map(child => {
+                    child.frac = parseInt(child.value)/ksBigBoxes[cat.name].value;
+                    return child;
+                }).sort((a,b) => b.frac - a.frac);
+
+                smalls = bestRandomBoxes(ksBigBoxes[cat.name].height, ksBigBoxes[cat.name].width, ksBigBoxes[cat.name].x, ksBigBoxes[cat.name].y, smalls, 500);
+
+                smalls = smalls.map(box => {
+                    box.category = cat.name;
+                    box.color = ksBigBoxes[cat.name].color;
+                    box.wrap = wrap(box.name, box.height, box.width, box.x, box.y);
+                    console.log(box.wrap);
+                    return box;
+                });
+
+                acc = acc.concat(smalls);
+                return acc;
+            }, []); 
+
+            function wrap(text, height, width, x, y) {
+                const functionOfWidth = width/6,
+                words = text.split(' ');
+                let newText = `<tspan x="${x + 2}" y="${y + 12}">`, 
+                count = 0;
+                lines = 1;
+
+                for (let i=0;i<words.length;i++) {
+                    if (count + 1 + words[i].length < functionOfWidth) {
+                        newText = newText + " " + words[i];
+                        count = count + 1 + words[i].length;
+                    } else if (height < 12 * (lines + 2)) {
+                        newText = newText + `</tspan><tspan x="${x + 2}" y="${y + lines * 12}">...</tspan>`;
+                        break;
+                    } else if (words[i].length >= functionOfWidth) {
+                        newText = newText + `</tspan><tspan x="${x + 2}" y="${y + lines * 12}">...</tspan>`;
+                        break;
+                    } else {
+                        lines += 1;
+                        newText = newText + `</tspan><tspan x="${x + 2}" y="${y + lines * 12}">` + words[i];
+                        count = words[i].length;
+                    }
+                }
+                newText += "</tspan>";
+                return newText;
+            }
+
+            function displayBoxes(data) {
+                svg.selectAll("rect")
+                .data(data)
+                .enter()
+                .append("rect")
+                .attr("class","tile")
+                .attr("data-name", (d) => d.name)
+                .attr("data-value", (d) => d.value)
+                .attr("data-category", (d) => d.category)
+                .attr("width", (d) => d.width)
+                .attr("height", (d) => d.height)
+                .attr("x", (d) => d.x)
+                .attr("y", (d) => d.y)
+                .attr("fill", (d) => d.color)
+                .attr("stroke","#000")
+                .attr("stroke-width", "1px")
+                .on("mouseover", popup)
+                .on("mouseout", popdown);
+
+                svg.selectAll("text")
+                .data(data)
+                .enter()
+                .append("text")
+                .html((d) => d.wrap)
+                .attr("x", (d) => d.x + 2)
+                .attr("y", (d) => d.y + 12)
+                .style("font-size", 10)
+                
+            }
+
+            function makeLegend(data) {
+                const len = data.length,
+                cols = Math.ceil(len/4),
+                colWidth = (0.8*W)/cols
+                rowHeight = (0.8*LH)/4;
+
+                const legend = svg.append("g")
+                .attr("id", "legend")
+
+                legend.selectAll('rect')
+                .data(data)
+                .enter()
+                .append('rect')
+                .attr("class","legend-item")
+                .attr("width", 30)
+                .attr("height", 30)
+                .attr("x", (d,i) => 0.1*W + colWidth*Math.floor(i/4))
+                .attr("y", (d,i) => H + 0.1*LH + rowHeight*(i % 4))
+                .attr("fill", (d) => d.color)
+                .attr("stroke", "#000")
+                .attr("stroke-width", "2px")
+
+                legend.selectAll('text')
+                .data(data)
+                .enter()
+                .append('text')
+                .attr("x", (d,i) => 0.1*W + colWidth*Math.floor(i/4) + 35)
+                .attr("y", (d,i) => H + 0.1*LH + rowHeight*(i % 4) + 20)
+                .text((d) => d.name);
+            }
+
+            displayBoxes(ksSmallBoxes);
+            makeLegend(ksCats);
+            
+            
+
+
+        </script>
+        <script src="https://cdn.freecodecamp.org/testable-projects-fcc/v1/bundle.js"></script>
+    </body>
+</html>
